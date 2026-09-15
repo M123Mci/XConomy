@@ -496,48 +496,32 @@ public class SQL {
         database.closeHikariConnection(connection);
     }
 
-    public static void record(Connection co, PlayerData pd, Boolean isAdd,
-                              BigDecimal amount, BigDecimal newbalance, RecordInfo ri) {
-        if (XConomyLoad.DConfig.isMySQL() && XConomyLoad.Config.TRANSACTION_RECORD) {
-            String uid = "N/A";
-            String name = "N/A";
-            String operation;
-            if (pd != null) {
-                if (pd.getUniqueId() != null) {
-                    uid = pd.getUniqueId().toString();
-                }
-                name = pd.getName();
-            }
-            if (isAdd != null) {
-                if (isAdd) {
-                    operation = "DEPOSIT";
-                } else {
-                    operation = "WITHDRAW";
-                }
-            } else {
-                operation = "SET";
-            }
-            try {
-                String query;
-                Date dd = new Date();
-                String sd = (new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")).format(dd);
-                query = "INSERT INTO " + tableRecordName + "(type,uid,player,balance,amount,operation,command,comment,datetime) values(?,?,?,?,?,?,?,?,?)";
-                PreparedStatement statement = co.prepareStatement(query);
-                statement.setString(1, ri.getType());
-                statement.setString(2, uid);
-                statement.setString(3, name);
-                statement.setDouble(4, newbalance.doubleValue());
-                statement.setDouble(5, amount.doubleValue());
-                statement.setString(6, operation);
-                statement.setString(7, ri.getCommand());
-                statement.setString(8, ri.getComment());
-                statement.setString(9, sd);
-                statement.executeUpdate();
-                statement.close();
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
+    public static void record(Connection connection, PlayerData player, Boolean isAdd,
+                              BigDecimal amount, BigDecimal balance, RecordInfo info) {
+        try {
+            recordConfirmed(connection, player, isAdd, amount, balance, info);
+        } catch (SQLException failure) {
+            failure.printStackTrace();
         }
     }
 
+    /** 使用调用方事务写入既有交易记录，失败必须传播给事务调用方。 */
+    public static void recordConfirmed(Connection connection, PlayerData player, Boolean isAdd,
+                                       BigDecimal amount, BigDecimal balance, RecordInfo info) throws SQLException {
+        if (!XConomyLoad.DConfig.isMySQL() || !XConomyLoad.Config.TRANSACTION_RECORD) return;
+        String operation = isAdd == null ? "SET" : isAdd ? "DEPOSIT" : "WITHDRAW";
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO " + tableRecordName
+                + " (type,uid,player,balance,amount,operation,command,comment,datetime) VALUES (?,?,?,?,?,?,?,?,?)")) {
+            statement.setString(1, info.getType());
+            statement.setString(2, player == null || player.getUniqueId() == null ? "N/A" : player.getUniqueId().toString());
+            statement.setString(3, player == null ? "N/A" : player.getName());
+            statement.setBigDecimal(4, balance);
+            statement.setBigDecimal(5, amount);
+            statement.setString(6, operation);
+            statement.setString(7, info.getCommand());
+            statement.setString(8, info.getComment());
+            statement.setTimestamp(9, new Timestamp(System.currentTimeMillis()));
+            statement.executeUpdate();
+        }
+    }
 }

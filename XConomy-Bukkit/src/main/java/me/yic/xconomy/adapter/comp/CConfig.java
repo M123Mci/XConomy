@@ -153,9 +153,9 @@ public class CConfig implements iConfig {
     }
 
     @Override
-    public void save() throws Exception {
+    public void save() throws IOException {
         if (ff == null){
-            throw new Exception("The file is null");
+            throw new IOException("The file is null");
         }
         fc.save(ff);
     }

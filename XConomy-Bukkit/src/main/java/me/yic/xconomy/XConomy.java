@@ -163,6 +163,7 @@ public class XConomy extends JavaPlugin {
     }
 
     public void onDisable() {
+        me.yic.xconomy.api.DurableRewards.shutdown();
 
         if (XConomyLoad.Config.IMPORTMODE){
             itd.onDisable();

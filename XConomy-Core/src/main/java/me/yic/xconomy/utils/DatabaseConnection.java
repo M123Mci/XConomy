@@ -186,6 +186,15 @@ public class DatabaseConnection {
         }
     }
 
+    /** 事务专用连接，绝不复用无连接池模式下的共享 Connection。调用者负责关闭。 */
+    public Connection openDedicatedConnection() throws SQLException {
+        if (XConomyLoad.DConfig.EnableConnectionPool) return hikari.getConnection();
+        if (XConomyLoad.DConfig.isMySQL()) {
+            return DriverManager.getConnection(url, XConomyLoad.DConfig.getuser(), XConomyLoad.DConfig.getpass());
+        }
+        return DriverManager.getConnection("jdbc:sqlite:" + userdata);
+    }
+
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean canConnect() {
         try {
