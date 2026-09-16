@@ -50,6 +50,7 @@ public final class RewardLedger {
     public static RewardReceipt deposit(UUID operation, UUID receiver, BigDecimal amount) throws SQLException {
         try (Connection connection = SQL.database.openDedicatedConnection()) {
             connection.setAutoCommit(false);
+            boolean commitAttempted = false;
             try {
                 // 操作键先取得事务锁，重复请求不会修改余额。
                 RewardReceipt existing = find(connection, operation);
@@ -88,10 +89,15 @@ public final class RewardLedger {
                 }
                 SQL.recordConfirmed(connection, new me.yic.xconomy.data.syncdata.PlayerData(receiver, playerName, balance),
                         true, amount, balance, new me.yic.xconomy.info.RecordInfo("PLUGIN_API", operation.toString(), "DurableReward"));
+                commitAttempted = true;
                 connection.commit();
                 return new RewardReceipt(operation, receiver, amount, balance);
             } catch (SQLException failure) {
-                try { connection.rollback(); } catch (SQLException rollback) { failure.addSuppressed(rollback); }
+                boolean rolledBack = false;
+                try { connection.rollback(); rolledBack = true; } catch (SQLException rollback) { failure.addSuppressed(rollback); }
+                if (!commitAttempted && rolledBack) {
+                    throw new me.yic.xconomy.api.RewardRejectedException("奖励事务已回滚，余额未提交", failure);
+                }
                 throw failure;
             } finally {
                 connection.rollback();
