@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "me.yic"
-version = "2.26.3-mr.26.2.2"
+version = "2.26.3-mr.26.2.3"
 java.toolchain.languageVersion.set(JavaLanguageVersion.of(25))
 
 repositories {

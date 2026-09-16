@@ -20,6 +20,15 @@ public final class DurableRewards {
     private DurableRewards() { }
 
     public static CompletableFuture<RewardReceipt> deposit(Player player, UUID operation, BigDecimal amount) {
+        return transact(player, operation, amount, true);
+    }
+
+    /** 成功回执 amount 为负数；调用方可用原操作 ID 查询，禁止盲目重复扣款。 */
+    public static CompletableFuture<RewardReceipt> withdraw(Player player, UUID operation, BigDecimal amount) {
+        return transact(player, operation, amount, false);
+    }
+
+    private static CompletableFuture<RewardReceipt> transact(Player player, UUID operation, BigDecimal amount, boolean deposit) {
         if (!Bukkit.isPrimaryThread()) throw new IllegalStateException("奖励必须由主线程提交");
         if (!accepting) throw new IllegalStateException("经济服务正在停用");
         Objects.requireNonNull(operation);
@@ -32,19 +41,19 @@ public final class DurableRewards {
         var current = DataCon.getPlayerData(receiver);
         if (current == null || !receiver.equals(current.getUniqueId())) throw new IllegalArgumentException("经济账户身份不一致");
         Bukkit.getPluginManager().callEvent(new PlayerAccountEvent(receiver, player.getName(), current.getBalance(),
-                amount, true, operation.toString(), "PLUGIN_API"));
+                amount, deposit, operation.toString(), "PLUGIN_API"));
         CompletableFuture<RewardReceipt> result = new CompletableFuture<>();
         WRITES.execute(() -> {
             try {
                 RewardLedger.initialize();
-                RewardReceipt receipt = RewardLedger.deposit(operation, receiver, amount);
+                RewardReceipt receipt = deposit ? RewardLedger.deposit(operation, receiver, amount) : RewardLedger.withdraw(operation, receiver, amount);
                 // 缓存仅作失效，避免覆盖其他插件在事务期间发生的余额变化。
                 Cache.deleteDataFromCache(receiver);
                 result.complete(receipt);
                 try {
                     Bukkit.getScheduler().runTask(XConomy.getInstance(), () -> {
                         var snapshot = new me.yic.xconomy.data.syncdata.PlayerData(receiver, receiverName, receipt.balance());
-                        snapshot.setVerifyBalance(receipt.balance().subtract(amount));
+                        snapshot.setVerifyBalance(receipt.balance().subtract(receipt.amount()));
                         if (me.yic.xconomy.XConomyLoad.getSyncData_Enable()) DataCon.SendMessTask(snapshot);
                     });
                 } catch (RuntimeException notificationFailure) {

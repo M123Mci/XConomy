@@ -48,6 +48,17 @@ public final class RewardLedger {
     }
 
     public static RewardReceipt deposit(UUID operation, UUID receiver, BigDecimal amount) throws SQLException {
+        if (amount == null || amount.signum() <= 0) throw new IllegalArgumentException("入账金额必须为正数");
+        return transact(operation, receiver, amount);
+    }
+
+    /** 扣款以负金额写入同一回执表，余额与回执在同一事务中提交。 */
+    public static RewardReceipt withdraw(UUID operation, UUID receiver, BigDecimal amount) throws SQLException {
+        if (amount == null || amount.signum() <= 0) throw new IllegalArgumentException("扣款金额必须为正数");
+        return transact(operation, receiver, amount.negate());
+    }
+
+    private static RewardReceipt transact(UUID operation, UUID receiver, BigDecimal amount) throws SQLException {
         try (Connection connection = SQL.database.openDedicatedConnection()) {
             connection.setAutoCommit(false);
             boolean commitAttempted = false;
@@ -70,6 +81,7 @@ public final class RewardLedger {
                         playerName = rows.getString(2);
                     }
                 }
+                if (amount.signum() < 0 && previous.add(amount).signum() < 0) throw new SQLException("余额不足，拒绝扣款");
                 try (PreparedStatement update = connection.prepareStatement("UPDATE " + SQL.tableName + " SET balance=balance+? WHERE UID=?")) {
                     update.setBigDecimal(1, amount); update.setString(2, receiver.toString());
                     if (update.executeUpdate() != 1) throw new SQLException("奖励收件人账户不存在");
@@ -88,7 +100,7 @@ public final class RewardLedger {
                     update.setBigDecimal(1, balance); update.setString(2, operation.toString()); update.executeUpdate();
                 }
                 SQL.recordConfirmed(connection, new me.yic.xconomy.data.syncdata.PlayerData(receiver, playerName, balance),
-                        true, amount, balance, new me.yic.xconomy.info.RecordInfo("PLUGIN_API", operation.toString(), "DurableReward"));
+                        amount.signum() > 0, amount.abs(), balance, new me.yic.xconomy.info.RecordInfo("PLUGIN_API", operation.toString(), "DurableReward"));
                 commitAttempted = true;
                 connection.commit();
                 return new RewardReceipt(operation, receiver, amount, balance);
